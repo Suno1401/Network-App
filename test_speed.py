@@ -43,6 +43,9 @@ def test_speed():
     download = st.download() / 1_000_000  # bits → Mbit/s
     upload = st.upload() / 1_000_000
     ping = st.results.ping
+    server_name = st.results.server['name']
+    server_country = st.results.server['country']
+    print(f"🌍 Connected to {server_name}, {server_country}")
     print(f"✅ Ping: {ping:.2f} ms | ↓ {download:.2f} Mbps | ↑ {upload:.2f} Mbps")
     return ping, download, upload
 
