@@ -1,8 +1,38 @@
 import speedtest
 import subprocess
 import platform
+import uuid
 
 # --- Conversion Function ---
+
+def hex_to_dotted_decimal(hex_mask):
+    """
+    Converts hexadecimal subnet mask (e.g., '0xffffff00') to dotted-decimal notation.
+    Returns the dotted-decimal format (e.g., '255.255.255.0') or the original if conversion fails.
+    """
+    if not hex_mask.startswith('0x'):
+        return hex_mask
+    
+    try:
+        hex_value = hex_mask.replace('0x', '')
+        octets = [hex_value[i:i+2] for i in range(0, len(hex_value), 2)]
+        decimal_str = ".".join([str(int(o, 16)) for o in octets])
+        return decimal_str
+    except Exception:
+        return hex_mask
+
+
+def get_mac_address():
+    """
+    Retrieves the MAC address of the primary network interface.
+    Returns the MAC address as a string (e.g., '00:1a:2b:3c:4d:5e') or 'Unknown'.
+    """
+    try:
+        mac = uuid.UUID(int=uuid.getnode()).hex[-12:]
+        return ':'.join([mac[i:i+2] for i in range(0, 12, 2)])
+    except Exception:
+        return "Unknown"
+
 
 def mask_to_cidr(raw_mask):
     """
@@ -51,13 +81,19 @@ def test_speed():
 
 def network():
     """Retrieves the public IP and local subnet mask."""
-    st = speedtest.Speedtest()
-    public_ip = st.results.client['ip']
+    try:
+        st = speedtest.Speedtest()
+        st.get_best_server()
+        public_ip = st.results.client['ip']
+    except Exception as e:
+        print(f"Warning: Could not get public IP via speedtest: {e}")
+        public_ip = "Unknown"
 
     subnet_mask = "Unknown"
     local_netmask = "Unknown"
     is_windows = platform.system().lower() == "windows"
 
+    local_ip = "Unknown"
     try:
         command = ["ipconfig"] if is_windows else ["ifconfig"]
         
@@ -69,7 +105,6 @@ def network():
         output = result.stdout
         
         for line in output.splitlines():
-            # 1. Capture Subnet Mask (Windows/Linux)
             if "Subnet Mask" in line and is_windows:
                 subnet_mask = line.split(":")[-1].strip()
             elif "netmask" in line and not is_windows:
@@ -80,11 +115,9 @@ def network():
                 except ValueError:
                     continue
             
-            # 2. Capture Local IP Address
             if "inet" in line and "127.0.0.1" not in line and "inet6" not in line:
                 parts = line.split()
                 try:
-  
                     if not is_windows and 'inet' in parts:
                         inet_index = parts.index('inet') + 1
                         local_ip = parts[inet_index]
@@ -94,7 +127,7 @@ def network():
                             local_ip = local_ip.split("addr:")[1]
 
                     elif is_windows and "IPv4 Address" in line:
-                         local_ip = line.split(":")[-1].strip()
+                        local_ip = line.split(":")[-1].strip()
 
                 except ValueError:
                     continue
@@ -103,6 +136,14 @@ def network():
     except Exception as e:
         print(f"Error retrieving local network info: {e}")
 
-    # Returns public IP, and the relevant local netmask/subnet mask based on OS
-    return public_ip, local_ip, subnet_mask if is_windows else local_netmask
+    # Convert hex netmask to dotted-decimal format if needed
+    if is_windows:
+        netmask = subnet_mask
+    else:
+        netmask = hex_to_dotted_decimal(local_netmask)
+
+    cidr = mask_to_cidr(netmask)
+
+    # Returns public IP, local IP, and netmask
+    return public_ip, local_ip, netmask, cidr
 
